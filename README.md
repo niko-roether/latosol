@@ -1,0 +1,1 @@
+# Latosol - A quicksend server, written in Rust.
