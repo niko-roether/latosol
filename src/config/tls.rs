@@ -1,7 +1,7 @@
 use std::{env, error::Error, fmt, fs::read_dir, iter};
 
 use anyhow::{Context, Result};
-use log::{error, warn};
+use log::{debug, error, warn};
 use tokio::fs::File;
 use tokio_rustls::rustls::{Certificate, PrivateKey};
 
@@ -46,11 +46,17 @@ impl TlsParamsBuilder {
 	fn add_item(&mut self, item: rustls_pemfile::Item) -> Result<()> {
 		use rustls_pemfile::Item::*;
 		match item {
-			X509Certificate(cert) => self.certificates.push(Certificate(cert)),
-			RSAKey(key) | PKCS8Key(key) => match self.private_key {
-				None => self.private_key = Some(PrivateKey(key)),
-				Some(_) => return Err(DuplicatePrivateKeyError.into())
-			},
+			X509Certificate(cert) => {
+				debug!("Certificate loaded");
+				self.certificates.push(Certificate(cert))
+			}
+			RSAKey(key) | PKCS8Key(key) => {
+				match self.private_key {
+					None => self.private_key = Some(PrivateKey(key)),
+					Some(_) => return Err(DuplicatePrivateKeyError.into())
+				}
+				debug!("Private key loaded");
+			}
 			ECKey(_) => warn!(
 				"A Sec1-encoded private key was provided; these are not supported and will be \
 				 ignored."
@@ -101,6 +107,7 @@ pub async fn read_tls_params() -> Result<TlsParams> {
             error!("Failed to open '{path_str}', skipping...");
             continue;
         };
+		debug!("Scanning '{path_str}' for certficates or private key...");
 		tls_params_builder
 			.add_from_file(file)
 			.await
