@@ -1,2 +1,3 @@
 [env]
 LATOSOL_TLS_CONF_DIR = "./test_crt"
+LATOSOL_LOG = "debug"
