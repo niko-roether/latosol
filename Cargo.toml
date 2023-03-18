@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.70"
 argh = "0.1.10"
+dotenvy = "0.15.6"
 env_logger = "0.10.0"
 log = "0.4.17"
 rustls-pemfile = "1.0.2"
