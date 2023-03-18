@@ -83,7 +83,7 @@ impl TlsParamsBuilder {
 	}
 }
 
-pub async fn read_tls_params() -> Result<TlsParams> {
+pub async fn read_params() -> Result<TlsParams> {
 	let conf_dir = env::var("LATOSOL_TLS_CONF_DIR").context("$LATOSOL_TLS_CONF_DIR is not set")?;
 	let entries = read_dir(conf_dir.clone()).context(format!(
 		"Failed to open {conf_dir}; make sure $LATOSOL_TLS_CONF_DIR is set correctly"

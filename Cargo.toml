@@ -11,8 +11,8 @@ argh = "0.1.10"
 dotenvy = "0.15.6"
 env_logger = "0.10.0"
 log = "0.4.17"
+mongodb = "2.4.0"
 rustls-pemfile = "1.0.2"
 serde = { version = "1.0.156", features = ["derive"] }
-sqlx = { version = "0.6.2", features = ["runtime-tokio-rustls"] }
 tokio = { version = "1.26.0", features = ["full"] }
 tokio-rustls = "0.23.4"
