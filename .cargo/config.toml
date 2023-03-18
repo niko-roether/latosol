@@ -1,0 +1,2 @@
+[env]
+LATOSOL_TLS_CONF_DIR = "./test_crt"

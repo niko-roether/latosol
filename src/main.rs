@@ -1,53 +1,27 @@
 #![feature(async_closure)]
 
-use std::{fs::File, io::BufReader};
-
-use env_logger::Env;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use server::{Server, TlsParams};
+use config::tls::read_tls_params;
+use server::Server;
 use tokio::io::AsyncWriteExt;
-use tokio_rustls::rustls::{Certificate, PrivateKey};
 
 mod server;
 
-fn get_test_certs() -> Vec<Certificate> {
-	let f = File::open("./test_crt/test.crt").unwrap();
-	let mut reader = BufReader::new(f);
-	certs(&mut reader)
-		.unwrap()
-		.into_iter()
-		.map(Certificate)
-		.collect()
-}
+mod config;
 
-fn get_test_key() -> PrivateKey {
-	let f = File::open("./test_crt/test.key").unwrap();
-	let mut reader = BufReader::new(f);
-	let keys = pkcs8_private_keys(&mut reader).unwrap();
-	PrivateKey(keys.into_iter().next().unwrap())
-}
+mod logger;
 
-fn init_logger() {
-	let env = Env::default()
-		.filter("LATOSOL_LOG")
-		.write_style("LATOSOL_LOG_STYLE")
-		.default_filter_or("info");
-	env_logger::init_from_env(env);
-}
+mod utils;
+
+// TODO environment variable
+const PORT: u16 = 6969;
 
 #[tokio::main]
 async fn main() {
-	init_logger();
+	logger::init();
 
-	let server = Server::bind(
-		6969,
-		TlsParams {
-			certificates: get_test_certs(),
-			private_key: get_test_key()
-		}
-	)
-	.await
-	.unwrap();
+	let tls_params = return_on_err!(read_tls_params().await);
+
+	let server = return_on_err!(Server::bind(PORT, tls_params).await);
 
 	server
 		.listen(async move |mut conn| {
