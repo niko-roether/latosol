@@ -1,18 +1,14 @@
 #![feature(async_closure)]
 
-use std::{
-	fs::File,
-	io::{BufReader, Write}
-};
+use std::{fs::File, io::BufReader};
 
 use env_logger::Env;
-use rustls::{Certificate, PrivateKey};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use server::{Server, TlsParams};
+use tokio::io::AsyncWriteExt;
+use tokio_rustls::rustls::{Certificate, PrivateKey};
 
 mod server;
-
-mod errors;
 
 fn get_test_certs() -> Vec<Certificate> {
 	let f = File::open("./test_crt/test.crt").unwrap();
@@ -47,13 +43,17 @@ async fn main() {
 			private_key: get_test_key()
 		}
 	)
+	.await
 	.unwrap();
 
-	server.listen(async move |mut conn| {
-		{
-			let mut writer = conn.writer();
-			writer.write_all(&[69, 69, 69, 69, 0]).unwrap();
-		}
-		conn.send().unwrap();
-	})
+	server
+		.listen(async move |mut conn| {
+			let addr = conn.peer_addr();
+			println!("Connected with {addr}");
+
+			conn.write_u8(69).await?;
+
+			Ok(())
+		})
+		.await;
 }

@@ -1,15 +1,16 @@
-use std::{
-	future::Future,
-	io::Write,
-	net::{Shutdown, SocketAddr, TcpListener, TcpStream},
-	sync::Arc
+use std::{future::Future, net::SocketAddr, pin::Pin, sync::Arc};
+
+use anyhow::{Context, Result};
+use log::{error, info};
+use tokio::{
+	io::{AsyncRead, AsyncWrite},
+	net::{TcpListener, TcpStream}
 };
-
-use log::{debug, error, info};
-use rustls::{Certificate, PrivateKey, Reader, ServerConfig, ServerConnection, Writer};
-use tokio::io;
-
-use crate::errors::Error;
+use tokio_rustls::{
+	rustls::{Certificate, PrivateKey, ServerConfig},
+	server::TlsStream,
+	TlsAcceptor
+};
 
 pub struct TlsParams {
 	pub certificates: Vec<Certificate>,
@@ -21,135 +22,117 @@ fn create_tls_server_cfg(
 		certificates,
 		private_key
 	}: TlsParams
-) -> Result<ServerConfig, Error> {
+) -> Result<ServerConfig> {
 	ServerConfig::builder()
 		.with_safe_defaults()
 		.with_no_client_auth()
 		.with_single_cert(certificates, private_key)
-		.map_err(Error::BadTlsParams)
+		.context("Bad TLS parameters")
 }
 
 #[derive(Debug)]
 pub struct Connection {
-	open: bool,
-	socket: TcpStream,
-	tls_conn: ServerConnection
+	peer_addr: SocketAddr,
+	stream: TlsStream<TcpStream>
 }
 
 impl Connection {
-	fn new(socket: TcpStream, tls_conn: ServerConnection) -> Self {
-		Self {
-			open: true,
-			socket,
-			tls_conn
-		}
+	fn new(peer_addr: SocketAddr, stream: TlsStream<TcpStream>) -> Self {
+		Self { peer_addr, stream }
 	}
 
-	pub fn reader(&mut self) -> RequestReader<'_> {
-		RequestReader::new(self.tls_conn.reader())
-	}
-
-	pub fn receive(&mut self) -> Result<(), Error> {
-		self.tls_conn
-			.read_tls(&mut self.socket)
-			.map_err(Error::ConnFailedToReceiveData)?;
-		if self.tls_conn.process_new_packets().is_err() {
-			self.close()?;
-		}
-		Ok(())
-	}
-
-	pub fn writer(&mut self) -> ResponseWriter<'_> {
-		ResponseWriter::new(self.tls_conn.writer())
-	}
-
-	pub fn send(&mut self) -> Result<usize, Error> {
-		self.tls_conn
-			.write_tls(&mut self.socket)
-			.map_err(Error::ConnFailedToSendData)
-	}
-
-	pub fn close(&mut self) -> Result<(), Error> {
-		self.socket
-			.shutdown(Shutdown::Both)
-			.map_err(Error::ConnFailedToClose)
+	pub fn peer_addr(&self) -> SocketAddr {
+		self.peer_addr
 	}
 }
 
-pub struct ResponseWriter<'a> {
-	writer: Writer<'a>
-}
-
-impl<'a> ResponseWriter<'a> {
-	fn new(writer: Writer<'a>) -> Self {
-		Self { writer }
+impl AsyncRead for Connection {
+	fn poll_read(
+		mut self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+		buf: &mut tokio::io::ReadBuf<'_>
+	) -> std::task::Poll<std::io::Result<()>> {
+		Pin::new(&mut self.stream).poll_read(cx, buf)
 	}
 }
 
-impl<'a> std::io::Write for ResponseWriter<'a> {
-	fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-		self.writer.write(buf)
+impl AsyncWrite for Connection {
+	fn poll_write(
+		mut self: Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+		buf: &[u8]
+	) -> std::task::Poll<std::result::Result<usize, std::io::Error>> {
+		Pin::new(&mut self.stream).poll_write(cx, buf)
 	}
 
-	fn flush(&mut self) -> io::Result<()> {
-		self.writer.flush()
+	fn poll_flush(
+		mut self: Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>
+	) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
+		Pin::new(&mut self.stream).poll_flush(cx)
 	}
-}
 
-pub struct RequestReader<'a> {
-	reader: Reader<'a>
-}
-
-impl<'a> RequestReader<'a> {
-	fn new(reader: Reader<'a>) -> Self {
-		Self { reader }
-	}
-}
-
-impl<'a> std::io::Read for RequestReader<'a> {
-	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-		self.reader.read(buf)
+	fn poll_shutdown(
+		mut self: Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>
+	) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
+		Pin::new(&mut self.stream).poll_shutdown(cx)
 	}
 }
 
-#[derive(Debug)]
 pub struct Server {
 	port: u16,
 	listener: TcpListener,
-	tls_config: Arc<ServerConfig>
+	acceptor: TlsAcceptor
 }
 
 impl Server {
-	pub fn bind(port: u16, tls_params: TlsParams) -> Result<Self, Error> {
+	pub async fn bind(port: u16, tls_params: TlsParams) -> Result<Self> {
 		let addr: SocketAddr = SocketAddr::new("::1".parse().unwrap(), port);
-		let listener = TcpListener::bind(addr)
-			.map_err(|io_error| Error::ServerBindingFailed { port, io_error })?;
+		let listener = TcpListener::bind(addr).await?;
 		let tls_config = Arc::new(create_tls_server_cfg(tls_params)?);
 		Ok(Self {
 			port,
 			listener,
-			tls_config
+			acceptor: TlsAcceptor::from(tls_config)
 		})
 	}
 
-	pub fn listen<H, F>(&self, handler: H)
+	pub async fn listen<H, F>(&self, handler: H)
 	where
 		H: (FnOnce(Connection) -> F) + Clone + Send + Sync + 'static,
-		F: Future<Output = ()> + Send
+		F: Future<Output = Result<()>> + Send
 	{
 		info!("Server listening on port {}...", self.port);
-		loop {
-			match self.listener.accept() {
-				Ok((socket, addr)) => {
-					debug!("Established connection with {addr}");
 
-					let tls_conn = ServerConnection::new(Arc::clone(&self.tls_config)).unwrap();
-					let conn = Connection::new(socket, tls_conn);
-					let handler = handler.clone();
-					tokio::spawn(async move { handler(conn).await });
-				}
-				Err(err) => error!("Failed to establish incoming connection: {err}")
+		loop {
+			match self.listener.accept().await {
+				Ok((stream, addr)) => self.accept_connection(stream, addr, handler.clone()).await,
+				Err(err) => error!("Failed to establish an incoming connection: {err}")
 			}
 		}
+	}
+
+	async fn accept_connection<H, F>(&self, stream: TcpStream, addr: SocketAddr, handler: H)
+	where
+		H: (FnOnce(Connection) -> F) + Clone + Send + Sync + 'static,
+		F: Future<Output = Result<()>> + Send
+	{
+		let acceptor = self.acceptor.clone();
+
+		let future = async move {
+			let stream = acceptor.accept(stream).await?;
+			let connection = Connection::new(addr, stream);
+
+			handler(connection).await?;
+
+			Result::<()>::Ok(())
+		};
+
+		tokio::spawn(async move {
+			if let Err(err) = future.await {
+				error!("Connection with {addr} terminated: {err}")
+			}
+		});
 	}
 }
