@@ -21,9 +21,9 @@ async fn main() {
 
 	let Parameters { port } = params::read();
 
-	let tls_params = return_on_err!(read_tls_params().await);
+	let tls_params = fatal_error!(read_tls_params().await);
 
-	let server = return_on_err!(Server::bind(port, tls_params).await);
+	let server = fatal_error!(Server::bind(port, tls_params).await);
 
 	server
 		.listen(async move |mut conn| {

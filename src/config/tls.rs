@@ -92,7 +92,7 @@ pub async fn read_tls_params() -> Result<TlsParams> {
 		let path_str = path.file_name().unwrap().to_string_lossy().into_owned();
 		if path.is_dir() {
 			warn!(
-				"Found subdirectory '{path_str}' in tls config directory. Subdirectories are not \
+				"Found subdirectory '{path_str}' in TLS config directory. Subdirectories are not \
 				 supported here and will be ignored.",
 			);
 			continue;

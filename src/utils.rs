@@ -1,16 +1,13 @@
 #[macro_export]
-macro_rules! return_on_err {
-	($err:expr, $val:expr) => {
+macro_rules! fatal_error {
+	($err:expr) => {
 		match $err {
 			Ok(val) => val,
 			Err(err) => {
 				::log::error!("Fatal Error: {err:?}");
 				::log::error!("Exiting...");
-				return $val;
+				::std::process::exit(1);
 			}
 		}
-	};
-	($err:expr) => {
-		return_on_err!($err, ())
 	};
 }
