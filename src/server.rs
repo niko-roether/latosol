@@ -1,7 +1,6 @@
 use std::{future::Future, net::SocketAddr, pin::Pin, sync::Arc};
 
 use anyhow::{Context, Result};
-use log::{error, info};
 use tokio::{
 	io::{AsyncRead, AsyncWrite},
 	net::{TcpListener, TcpStream}
@@ -103,12 +102,12 @@ impl Server {
 		H: (FnOnce(Connection) -> F) + Clone + Send + Sync + 'static,
 		F: Future<Output = Result<()>> + Send
 	{
-		info!("Server listening on port {}...", self.port);
+		log::info!("Server listening on port {}...", self.port);
 
 		loop {
 			match self.listener.accept().await {
 				Ok((stream, addr)) => self.accept_connection(stream, addr, handler.clone()).await,
-				Err(err) => error!("Failed to establish an incoming connection: {err}")
+				Err(err) => log::error!("Failed to establish an incoming connection: {err}")
 			}
 		}
 	}
@@ -131,7 +130,7 @@ impl Server {
 
 		tokio::spawn(async move {
 			if let Err(err) = future.await {
-				error!("Connection with {addr} terminated: {err}")
+				log::error!("Connection with {addr} terminated: {err}")
 			}
 		});
 	}

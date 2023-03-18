@@ -1,7 +1,6 @@
 use std::{env, error::Error, fmt, fs::read_dir, iter};
 
 use anyhow::{Context, Result};
-use log::{debug, error, warn};
 use tokio::fs::File;
 use tokio_rustls::rustls::{Certificate, PrivateKey};
 
@@ -47,7 +46,7 @@ impl TlsParamsBuilder {
 		use rustls_pemfile::Item::*;
 		match item {
 			X509Certificate(cert) => {
-				debug!("Certificate loaded");
+				log::debug!("Certificate loaded");
 				self.certificates.push(Certificate(cert))
 			}
 			RSAKey(key) | PKCS8Key(key) => {
@@ -55,9 +54,9 @@ impl TlsParamsBuilder {
 					None => self.private_key = Some(PrivateKey(key)),
 					Some(_) => return Err(DuplicatePrivateKeyError.into())
 				}
-				debug!("Private key loaded");
+				log::debug!("Private key loaded");
 			}
-			ECKey(_) => warn!(
+			ECKey(_) => log::warn!(
 				"A Sec1-encoded private key was provided; these are not supported and will be \
 				 ignored."
 			),
@@ -97,17 +96,17 @@ pub async fn read_tls_params() -> Result<TlsParams> {
 		let path = entry.path();
 		let path_str = path.file_name().unwrap().to_string_lossy().into_owned();
 		if path.is_dir() {
-			warn!(
+			log::warn!(
 				"Found subdirectory '{path_str}' in TLS config directory. Subdirectories are not \
 				 supported here and will be ignored.",
 			);
 			continue;
 		}
 		let Ok(file) = File::open(path).await else {
-            error!("Failed to open '{path_str}', skipping...");
+            log::error!("Failed to open '{path_str}', skipping...");
             continue;
         };
-		debug!("Scanning '{path_str}' for certficates or private key...");
+		log::debug!("Scanning '{path_str}' for certficates or private key...");
 		tls_params_builder
 			.add_from_file(file)
 			.await
