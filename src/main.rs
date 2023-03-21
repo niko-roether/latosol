@@ -18,6 +18,8 @@ mod utils;
 
 mod db;
 
+mod models;
+
 #[tokio::main]
 async fn main() {
 	#[cfg(any(debug_assertions, test))]

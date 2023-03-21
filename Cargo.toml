@@ -14,5 +14,6 @@ log = "0.4.17"
 mongodb = "2.4.0"
 rustls-pemfile = "1.0.2"
 serde = { version = "1.0.156", features = ["derive"] }
+serde_repr = "0.1.12"
 tokio = { version = "1.26.0", features = ["full"] }
 tokio-rustls = "0.23.4"
